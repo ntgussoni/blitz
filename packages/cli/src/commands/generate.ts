@@ -1,31 +1,40 @@
-import {Command} from "../command"
 import {flags} from "@oclif/command"
 import {log} from "@blitzjs/display"
 import {
   PageGenerator,
+  MutationsGenerator,
   MutationGenerator,
   QueriesGenerator,
   FormGenerator,
   ModelGenerator,
   QueryGenerator,
+  singleCamel,
+  capitalize,
+  uncapitalize,
+  singlePascal,
+  pluralCamel,
+  pluralPascal,
 } from "@blitzjs/generator"
+
+import {Command} from "../command"
 import {PromptAbortedError} from "../errors/prompt-aborted"
+import chalk from "chalk"
 
 const debug = require("debug")("blitz:generate")
-const pascalCase = (str: string) => require("camelcase")(str, {pascalCase: true})
-const getIsTypescript = () =>
+const getIsTypeScript = () =>
   require("fs").existsSync(
-    require("path").join(require("../utils/get-project-root").projectRoot, "tsconfig.json"),
+    require("path").join(require("@blitzjs/config").getProjectRoot(), "tsconfig.json"),
   )
 
 enum ResourceType {
   All = "all",
   Crud = "crud",
   Model = "model",
-  Mutations = "mutations",
   Pages = "pages",
   Queries = "queries",
   Query = "query",
+  Mutations = "mutations",
+  Mutation = "mutation",
   Resource = "resource",
 }
 
@@ -40,25 +49,17 @@ interface Args {
   model: string
 }
 
-function pluralize(input: string): string {
-  return require("pluralize").isPlural(input) ? input : require("pluralize").plural(input)
-}
-
-function singular(input: string): string {
-  return require("pluralize").isSingular(input) ? input : require("pluralize").singular(input)
-}
-
 function modelName(input: string = "") {
-  return require("camelcase")(singular(input))
+  return singleCamel(input)
 }
 function modelNames(input: string = "") {
-  return require("camelcase")(pluralize(input))
+  return pluralCamel(input)
 }
 function ModelName(input: string = "") {
-  return pascalCase(singular(input))
+  return singlePascal(input)
 }
 function ModelNames(input: string = "") {
-  return pascalCase(pluralize(input))
+  return pluralPascal(input)
 }
 
 const generatorMap = {
@@ -67,15 +68,16 @@ const generatorMap = {
     PageGenerator,
     FormGenerator,
     QueriesGenerator,
-    MutationGenerator,
+    MutationsGenerator,
   ],
-  [ResourceType.Crud]: [MutationGenerator, QueriesGenerator],
+  [ResourceType.Crud]: [MutationsGenerator, QueriesGenerator],
   [ResourceType.Model]: [ModelGenerator],
-  [ResourceType.Mutations]: [MutationGenerator],
   [ResourceType.Pages]: [PageGenerator, FormGenerator],
   [ResourceType.Queries]: [QueriesGenerator],
   [ResourceType.Query]: [QueryGenerator],
-  [ResourceType.Resource]: [ModelGenerator, QueriesGenerator, MutationGenerator],
+  [ResourceType.Mutations]: [MutationsGenerator],
+  [ResourceType.Mutation]: [MutationGenerator],
+  [ResourceType.Resource]: [ModelGenerator, QueriesGenerator, MutationsGenerator],
 }
 
 export class Generate extends Command {
@@ -115,27 +117,27 @@ export class Generate extends Command {
   }
 
   static examples = [
-    `# The 'crud' type will generate all queries & mutations for a model
+    `${chalk.dim("# The 'crud' type will generate all queries & mutations for a model")}
 > blitz generate crud productVariant
     `,
-    `# The 'all' generator will scaffold out everything possible for a model
+    `${chalk.dim("# The 'all' generator will scaffold out everything possible for a model")}
 > blitz generate all products
     `,
-    `# The '--context' flag will allow you to generate files in a nested folder
+    `${chalk.dim("# The '--context' flag will allow you to generate files in a nested folder")}
 > blitz generate pages projects --admin
     `,
-    `# Context can also be supplied in the model name directly
+    `${chalk.dim("# Context can also be supplied in the model name directly")}
 > blitz generate pages admin/projects
     `,
-    `# To generate nested routes for dependent models (e.g. Projects that contain
+    `${chalk.dim(`# To generate nested routes for dependent models (e.g. Projects that contain
 # Tasks), specify a parent model. For example, this command generates pages under
-# app/tasks/pages/projects/[projectId]/tasks/
+# app/tasks/pages/projects/[projectId]/tasks/`)}
 > blitz generate all tasks --parent=projects
     `,
-    `# Database models can also be generated directly from the CLI
+    `${chalk.dim(`# Database models can also be generated directly from the CLI
 # Model fields can be specified with any generator that generates
 # a database model ("all", "model", "resource"). Both of the below
-# will generate the proper database model for a Task.
+# will generate the proper database model for a Task.`)}
 > blitz generate model task \\
     name:string \\
     completed:boolean:default[false] \\
@@ -145,9 +147,9 @@ export class Generate extends Command {
     completed:boolean:default[false] \\
     belongsTo:project?
     `,
-    `# Sometimes you want just a single query with no generated
+    `${chalk.dim(`# Sometimes you want just a single query with no generated
 # logic. Generating "query" instead of "queries" will give you a more
-# customizable template.
+# customizable template.`)}
 > blitz generate query getUserSession`,
   ]
 
@@ -229,10 +231,11 @@ export class Generate extends Command {
           parentModels: modelNames(flags.parent),
           ParentModel: ModelName(flags.parent),
           ParentModels: ModelNames(flags.parent),
-          rawInput: model,
+          name: uncapitalize(model),
+          Name: capitalize(model),
           dryRun: flags["dry-run"],
           context: context,
-          useTs: getIsTypescript(),
+          useTs: getIsTypeScript(),
         })
         await generator.run()
       }

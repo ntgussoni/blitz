@@ -11,7 +11,7 @@ describe("index page", () => {
   })
 
   it("goes to the login page", () => {
-    cy.contains("a", "Log In").click()
+    cy.contains("a", /login/i).click()
     cy.location("pathname").should("equal", "/login")
   })
 
@@ -29,14 +29,16 @@ describe("index page", () => {
 
     cy.signup(user)
 
+    cy.wait(500)
     cy.contains("button", "Logout").click()
-    cy.contains("a", "Log In").click()
+    cy.contains("a", /login/i).click()
 
     cy.contains("Email").find("input").type(user.email)
     cy.contains("Password").find("input").type(user.password)
-    cy.contains("button", "Log In").click()
+    cy.contains("button", /login/i).click()
 
     cy.location("pathname").should("equal", "/")
+    cy.wait(500)
     cy.contains("button", "Logout")
   })
 
@@ -48,7 +50,7 @@ describe("index page", () => {
     cy.contains("button", "Logout").click()
 
     cy.location("pathname").should("equal", "/")
-    cy.contains("a", "Log In")
+    cy.contains("a", /login/i)
   })
 
   it("tracks anonymous sessions", () => {

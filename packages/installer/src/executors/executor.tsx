@@ -1,5 +1,5 @@
-import * as React from "react"
 import {Box, Text} from "ink"
+import * as React from "react"
 import {Newline} from "../components/newline"
 
 export interface ExecutorConfig {
@@ -12,7 +12,7 @@ export interface ExecutorConfig {
 
 export interface Executor {
   type: string
-  Propose: React.FC<{step: ExecutorConfig; onProposalAccepted: (data?: any) => void; cliArgs: any}>
+  Propose?: React.FC<{step: ExecutorConfig; onProposalAccepted: (data?: any) => void; cliArgs: any}>
   Commit: React.FC<{
     step: ExecutorConfig
     proposalData?: any
@@ -38,11 +38,19 @@ export function Frontmatter({executor}: {executor: ExecutorConfig}) {
     <Box flexDirection="column" paddingBottom={1}>
       <Newline />
       <Box flexDirection="column">
-        <Text color="#8a3df0" bold>{verticalBorder}</Text>
-        <Text color="#8a3df0" bold>⎪&nbsp;&nbsp;&nbsp;{executor.stepName}&nbsp;&nbsp;&nbsp;⎪</Text>
-        <Text color="#8a3df0" bold>{verticalBorder}</Text>
+        <Text color="#8a3df0" bold>
+          {verticalBorder}
+        </Text>
+        <Text color="#8a3df0" bold>
+          ⎪&nbsp;&nbsp;&nbsp;{executor.stepName}&nbsp;&nbsp;&nbsp;⎪
+        </Text>
+        <Text color="#8a3df0" bold>
+          {verticalBorder}
+        </Text>
       </Box>
-      <Text bold>{executor.explanation}</Text>
+      <Text color="gray" italic>
+        {executor.explanation}
+      </Text>
     </Box>
   )
 }

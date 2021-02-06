@@ -1,26 +1,26 @@
-import {deserializeError} from "serialize-error"
 import {queryCache} from "react-query"
-import {isClient, isServer, clientDebug} from "./utils"
-import {getAntiCSRFToken} from "./supertokens"
+import {deserialize, serialize} from "superjson"
+import {SuperJSONResult} from "superjson/dist/types"
 import {
   HEADER_CSRF,
-  HEADER_SESSION_REVOKED,
   HEADER_CSRF_ERROR,
   HEADER_PUBLIC_DATA_TOKEN,
+  HEADER_SESSION_CREATED,
+  HEADER_SESSION_REVOKED,
 } from "./constants"
-import {publicDataStore} from "./public-data-store"
 import {CSRFTokenMismatchError} from "./errors"
-import {serialize, deserialize} from "superjson"
+import {publicDataStore} from "./public-data-store"
+import {getAntiCSRFToken} from "./supertokens"
 import {
-  ResolverType,
-  ResolverModule,
+  CancellablePromise,
   EnhancedResolver,
   EnhancedResolverRpcClient,
-  CancellablePromise,
+  ResolverModule,
   ResolverRpc,
+  ResolverType,
   RpcOptions,
 } from "./types"
-import {SuperJSONResult} from "superjson/dist/types"
+import {clientDebug, isClient, isServer} from "./utils"
 import {getQueryKeyFromUrlAndParams} from "./utils/react-query-utils"
 
 export const executeRpcCall = <TInput, TResult>(
@@ -77,59 +77,67 @@ export const executeRpcCall = <TInput, TResult>(
       }),
       signal: controller.signal,
     })
-    .then(async (result) => {
+    .then(async (response) => {
       clientDebug("Received request for", apiUrl)
-      if (result.headers) {
-        if (result.headers.get(HEADER_PUBLIC_DATA_TOKEN)) {
+      if (response.headers) {
+        if (response.headers.get(HEADER_PUBLIC_DATA_TOKEN)) {
           publicDataStore.updateState()
           clientDebug("Public data updated")
         }
-        if (result.headers.get(HEADER_SESSION_REVOKED)) {
-          clientDebug("Sessin revoked")
+        if (response.headers.get(HEADER_SESSION_REVOKED)) {
+          clientDebug("Session revoked")
+          queryCache.clear()
           publicDataStore.clear()
         }
-        if (result.headers.get(HEADER_CSRF_ERROR)) {
+        if (response.headers.get(HEADER_SESSION_CREATED)) {
+          clientDebug("Session created")
+          queryCache.clear()
+        }
+        if (response.headers.get(HEADER_CSRF_ERROR)) {
           const err = new CSRFTokenMismatchError()
           delete err.stack
           throw err
         }
       }
 
-      let payload
-      try {
-        payload = await result.json()
-      } catch (error) {
-        throw new Error(`Failed to parse json from request to ${apiUrl}`)
-      }
-
-      if (payload.error) {
-        let error = deserializeError(payload.error) as any
-        // We don't clear the publicDataStore for anonymous users
-        if (error.name === "AuthenticationError" && publicDataStore.getData().userId) {
-          publicDataStore.clear()
-        }
-
-        const prismaError = error.message.match(/invalid.*prisma.*invocation/i)
-        if (prismaError && !("code" in error)) {
-          error = new Error(prismaError[0])
-          error.statusCode = 500
-        }
-
-        // Prevent client-side error popop from showing
+      if (!response.ok) {
+        const error = new Error(response.statusText)
+        ;(error as any).statusCode = response.status
+        ;(error as any).path = apiUrl
         delete error.stack
-
         throw error
       } else {
-        const data =
-          payload.result === undefined
-            ? undefined
-            : deserialize({json: payload.result, meta: payload.meta?.result})
-
-        if (!opts.fromQueryHook) {
-          const queryKey = getQueryKeyFromUrlAndParams(apiUrl, params)
-          queryCache.setQueryData(queryKey, data)
+        let payload
+        try {
+          payload = await response.json()
+        } catch (error) {
+          const err = new Error(`Failed to parse json from ${apiUrl}`)
+          delete err.stack
         }
-        return data as TResult
+
+        if (payload.error) {
+          let error = deserialize({json: payload.error, meta: payload.meta?.error}) as any
+          // We don't clear the publicDataStore for anonymous users
+          if (error.name === "AuthenticationError" && publicDataStore.getData().userId) {
+            publicDataStore.clear()
+          }
+
+          const prismaError = error.message.match(/invalid.*prisma.*invocation/i)
+          if (prismaError && !("code" in error)) {
+            error = new Error(prismaError[0])
+            error.statusCode = 500
+          }
+
+          throw error
+        } else {
+          const data = deserialize({json: payload.result, meta: payload.meta?.result})
+
+          if (!opts.fromQueryHook) {
+            const queryKey = getQueryKeyFromUrlAndParams(apiUrl, params)
+            queryCache.setQueryData(queryKey, data)
+          }
+          return data as TResult
+        }
       }
     }) as CancellablePromise<TResult>
 
@@ -141,15 +149,19 @@ export const executeRpcCall = <TInput, TResult>(
 }
 
 executeRpcCall.warm = (apiUrl: string) => {
-  if (isClient) {
-    return window.fetch(apiUrl, {method: "HEAD"})
-  } else {
+  if (!isClient) {
     return
   }
+
+  return window.fetch(apiUrl, {method: "HEAD"})
 }
 
 const getApiUrlFromResolverFilePath = (resolverFilePath: string) =>
   resolverFilePath.replace(/^app\/_resolvers/, "/api")
+
+type IsomorphicEnhancedResolverOptions = {
+  warmApiEndpoints?: boolean
+}
 
 /*
  * Overloading signature so you can specify server/client and get the
@@ -161,6 +173,8 @@ export function getIsomorphicEnhancedResolver<TInput, TResult>(
   resolverFilePath: string,
   resolverName: string,
   resolverType: ResolverType,
+  target?: undefined,
+  options?: IsomorphicEnhancedResolverOptions,
 ): EnhancedResolver<TInput, TResult> | EnhancedResolverRpcClient<TInput, TResult>
 export function getIsomorphicEnhancedResolver<TInput, TResult>(
   // resolver is undefined on the client
@@ -169,6 +183,7 @@ export function getIsomorphicEnhancedResolver<TInput, TResult>(
   resolverName: string,
   resolverType: ResolverType,
   target: "client",
+  options?: IsomorphicEnhancedResolverOptions,
 ): EnhancedResolverRpcClient<TInput, TResult>
 export function getIsomorphicEnhancedResolver<TInput, TResult>(
   // resolver is undefined on the client
@@ -177,6 +192,7 @@ export function getIsomorphicEnhancedResolver<TInput, TResult>(
   resolverName: string,
   resolverType: ResolverType,
   target: "server",
+  options?: IsomorphicEnhancedResolverOptions,
 ): EnhancedResolver<TInput, TResult>
 export function getIsomorphicEnhancedResolver<TInput, TResult>(
   // resolver is undefined on the client
@@ -185,6 +201,7 @@ export function getIsomorphicEnhancedResolver<TInput, TResult>(
   resolverName: string,
   resolverType: ResolverType,
   target: "server" | "client" = isClient ? "client" : "server",
+  options: IsomorphicEnhancedResolverOptions = {},
 ): EnhancedResolver<TInput, TResult> | EnhancedResolverRpcClient<TInput, TResult> {
   const apiUrl = getApiUrlFromResolverFilePath(resolverFilePath)
 
@@ -201,8 +218,10 @@ export function getIsomorphicEnhancedResolver<TInput, TResult>(
     }
 
     // Warm the lambda
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    executeRpcCall.warm(apiUrl)
+    if (options.warmApiEndpoints) {
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      executeRpcCall.warm(apiUrl)
+    }
 
     return enhancedResolverRpcClient
   } else {

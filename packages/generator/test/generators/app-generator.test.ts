@@ -1,6 +1,5 @@
-import spawn from "cross-spawn"
 import {log} from "@blitzjs/display"
-
+import spawn from "cross-spawn"
 import {AppGenerator} from "../../src/generators/app-generator"
 
 // Spies process to avoid trying to chdir to a non existing folder
@@ -120,7 +119,17 @@ describe("AppGenerator", () => {
     //
     expect(spawn.sync).toHaveBeenCalledWith(
       "git",
-      ["commit", "--no-gpg-sign", "--no-verify", "-m", "New baby Blitz app!"],
+      [
+        "-c",
+        "user.name='Blitz.js CLI'",
+        "-c",
+        "user.email='noop@blitzjs.com'",
+        "commit",
+        "--no-gpg-sign",
+        "--no-verify",
+        "-m",
+        "Brand new Blitz app!",
+      ],
       {
         stdio: "ignore",
         timeout: 10000,

@@ -1,12 +1,11 @@
-import {through} from "../../streams"
-import vfs from "vinyl-fs"
-import mergeStream from "merge-stream"
-
-import File from "vinyl"
 import chokidar from "chokidar"
-import vinyl from "vinyl-file"
 import {Stats} from "fs"
-import {normalize, resolve, isAbsolute} from "path"
+import mergeStream from "merge-stream"
+import {isAbsolute, normalize, resolve} from "path"
+import File from "vinyl"
+import vinyl from "vinyl-file"
+import vfs from "vinyl-fs"
+import {through} from "../../streams"
 
 export const watch = (includePaths: string[] | string, options: chokidar.WatchOptions) => {
   function resolveFilepath(filepath: string) {
@@ -53,6 +52,10 @@ function getWatcher(watching: boolean, cwd: string, include: string[], ignore: s
       persistent: true,
       ignoreInitial: true,
       alwaysStat: true,
+      awaitWriteFinish: {
+        stabilityThreshold: 2000,
+        pollInterval: 100,
+      },
     })
   }
 
@@ -76,6 +79,7 @@ export function agnosticSource({ignore, include, cwd, watch: watching = false}: 
     read: true,
     dot: true,
     cwd,
+    allowEmpty: true,
   })
 
   const watcher = getWatcher(watching, cwd, include, ignore)
